@@ -1,0 +1,54 @@
+services:
+  superset-db:
+    image: postgres:16
+    container_name: superset-db
+    environment:
+      POSTGRES_USER: ${SUPERSET_DB_USER}
+      POSTGRES_PASSWORD: ${SUPERSET_DB_PASSWORD}
+      POSTGRES_DB: ${SUPERSET_DB_NAME}
+    volumes:
+      - superset_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SUPERSET_DB_USER} -d ${SUPERSET_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  superset:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: superset
+    env_file: .env
+    ports:
+      - "8088:8088"
+    volumes:
+      - superset_home:/app/superset_home
+    command: ["/app/docker/bootstrap.sh", "webserver"]
+    depends_on:
+      superset-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  superset-mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: superset-mcp
+    env_file: .env
+    ports:
+      - "5008:5008"
+    volumes:
+      - superset_home:/app/superset_home
+    command: ["/app/docker/bootstrap.sh", "mcp"]
+    depends_on:
+      superset:
+        condition: service_healthy
+
+volumes:
+  superset_home:
+  superset_db_data:

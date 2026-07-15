@@ -75,14 +75,20 @@ def fetch_schema(cur) -> dict:
             }
         )
 
+    # pg_catalog, not information_schema: table_constraints/key_column_usage are
+    # privilege-filtered and return nothing for a SELECT-only role like the MCP
+    # read-only user. pg_constraint has no such filtering.
     cur.execute(
         """
-        SELECT tc.table_name, kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
-        ORDER BY tc.table_name, kcu.ordinal_position
+        SELECT
+            con.conrelid::regclass::text AS table_name,
+            att.attname AS column_name
+        FROM pg_constraint con
+        JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+        JOIN pg_attribute att
+          ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+        WHERE con.contype = 'p' AND con.connamespace = 'public'::regnamespace
+        ORDER BY table_name, u.ord
         """
     )
     pk_by_table: dict[str, list[str]] = {}
@@ -92,17 +98,19 @@ def fetch_schema(cur) -> dict:
     cur.execute(
         """
         SELECT
-            tc.table_name AS table_name,
-            kcu.column_name AS column_name,
-            ccu.table_name AS references_table,
-            ccu.column_name AS references_column
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-        JOIN information_schema.constraint_column_usage ccu
-          ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
-        ORDER BY tc.table_name, kcu.column_name
+            con.conrelid::regclass::text AS table_name,
+            att.attname AS column_name,
+            con.confrelid::regclass::text AS references_table,
+            fatt.attname AS references_column
+        FROM pg_constraint con
+        JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+        JOIN pg_attribute att
+          ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+        JOIN LATERAL unnest(con.confkey) WITH ORDINALITY AS fu(attnum, ord) ON fu.ord = u.ord
+        JOIN pg_attribute fatt
+          ON fatt.attrelid = con.confrelid AND fatt.attnum = fu.attnum
+        WHERE con.contype = 'f' AND con.connamespace = 'public'::regnamespace
+        ORDER BY table_name, column_name
         """
     )
     fk_by_table: dict[str, list[dict]] = {}

@@ -10,6 +10,14 @@ via the Superset MCP server.
 Adapted from the `dinokeco/bi-agent` reference project, which did the same for the
 Online Retail dataset using the Gemini CLI. This fork uses Claude Code instead.
 
+## SQL generation rules
+
+@AGENT_SYSTEM_PROMPT.md governs all SQL generation against the Olist warehouse via
+the `olist-warehouse` MCP tools (`get_schema`, `run_query`, `sample_rows`). Read it
+before writing any SQL against this warehouse — it covers schema-check discipline,
+showing your SQL, the `customer_unique_id` vs `customer_id` trap, AOV grain,
+`day_of_week` convention, and how to handle ambiguous questions.
+
 ## Stack
 
 - **Warehouse**: Supabase (hosted PostgreSQL)

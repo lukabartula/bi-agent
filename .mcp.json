@@ -3,6 +3,10 @@
     "olist-warehouse": {
       "command": "/home/lukabartula/Projects/bi-agent/.venv/bin/python",
       "args": ["mcp_server/server.py"]
+    },
+    "superset": {
+      "type": "http",
+      "url": "http://localhost:5008/mcp"
     }
   }
 }
