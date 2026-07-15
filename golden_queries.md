@@ -162,15 +162,22 @@ Tests: the system prompt's instruction to surface ambiguity rather than guess.
 
 ## Scoring
 
+Run 2026-07-15 against the live `olist-warehouse` MCP (schema pulled fresh via
+`get_schema` before any query, per system prompt rule 1). For Q1–Q9 the agent
+wrote SQL from the question text alone before comparing to the expected SQL
+below each result.
+
 | # | Question | Pass/Fail | Notes |
 |---|----------|-----------|-------|
-| 1 | Total revenue | | |
-| 2 | Revenue 2017 | | |
-| 3 | Top categories | | |
-| 4 | Revenue by state | | |
-| 5 | Average order value | | |
-| 6 | Avg delivery days | | |
-| 7 | Late delivery rate | | |
-| 8 | Worst review categories | | |
-| 9 | Monthly trend 2018 | | |
-| 10 | Ambiguous "best sellers" | | |
+| 1 | Total revenue | Pass | Identical query. Result: **$15,843,553.24**. |
+| 2 | Revenue 2017 | Pass | Identical query, joins `dim_date` instead of parsing timestamps. Result: **$7,142,672.43**. |
+| 3 | Top categories | Pass | Identical query (English category name, `GROUP BY`/`ORDER BY`/`LIMIT 10`). Top: health_beauty ($1.44M), watches_gifts ($1.31M), bed_bath_table ($1.24M). |
+| 4 | Revenue by state | Pass | Identical query. Correctly defaulted to `dim_customer.customer_state` (demand-side) per rule 6, not `dim_seller`. Top: SP ($5.92M), RJ ($2.13M), MG ($1.86M). |
+| 5 | Average order value | Pass | Identical query — `SUM(total_item_value) / COUNT(DISTINCT order_id)`, **not** `AVG(total_item_value)` (would double-count multi-item orders). Result: **$160.58**. This is the grain-trap question (rule 4) and the agent applied it correctly on the first attempt. |
+| 6 | Avg delivery days | Pass | Identical query — reads `delivery_days` off `dim_order`, filters `IS NOT NULL` rather than treating undelivered orders as zero. Result: **12.09 days**. |
+| 7 | Late delivery rate | Pass | Identical query — conditional `FILTER`, denominator restricted to delivered orders. Result: **6.77%**. |
+| 8 | Worst review categories | Pass | Same three-way join (`fact_order_items` → `dim_product`, `dim_order` → `fact_reviews`) and `HAVING COUNT(*) > 50`. Agent's version also selected `n_reviews` for transparency — extra column, same result set. Worst: office_furniture (3.49), fashion_male_clothing (3.64), fixed_telephony (3.68). Note a `NULL` category row appears in the top 10 (uncategorized products, per the known translation-coverage gotcha) — expected, not a bug. |
+| 9 | Monthly trend 2018 | Pass | Identical query. Returns Jan–Sep 2018 only; September is a $166.46 stub (data coverage ends there) — real data artifact, not a query error. |
+| 10 | Ambiguous "best sellers" | Pass | Agent did **not** silently pick an interpretation. Per system-prompt rule 7, "best sellers" is a case where revenue/order-volume/review-score readings would produce materially different seller lists, so the agent surfaced the ambiguity as a clarifying question (revenue vs. order volume vs. review score) instead of guessing. User selected **revenue**; agent then ran `SUM(total_item_value)` by `seller_id` (top: seller `4869f7a5…` at $249,640.70). Confirms the rule-7 behavior end-to-end, not just as a stated intention. |
+
+**Summary: 10/10 pass.** No SQL corrections were needed against the expected shapes; the two grain-trap rules under specific test (AOV in Q5, ambiguity surfacing in Q10) both fired correctly without prompting.
